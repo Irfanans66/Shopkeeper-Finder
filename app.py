@@ -51,7 +51,10 @@ def create_driver():
     options.add_experimental_option("useAutomationExtension", False)
     if platform.system() == "Darwin":
         options.binary_location = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    service = Service(ChromeDriverManager().install())
+        service = Service(ChromeDriverManager().install())
+    else:
+        options.binary_location = "/usr/bin/chromium"
+        service = Service("/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
