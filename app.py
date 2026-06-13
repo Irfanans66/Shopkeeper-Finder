@@ -1,3 +1,4 @@
+import platform
 import streamlit as st
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -48,7 +49,8 @@ def create_driver():
     )
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-    options.binary_location = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    if platform.system() == "Darwin":
+        options.binary_location = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {

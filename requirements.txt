@@ -1,3 +1,5 @@
 streamlit
-googlemaps
+selenium
+webdriver-manager
+beautifulsoup4
 pandas
