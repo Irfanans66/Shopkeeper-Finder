@@ -1,3 +1,4 @@
+import json
 import platform
 import streamlit as st
 from selenium import webdriver
@@ -32,6 +33,33 @@ CATEGORIES = {
     "Furniture":            "furniture stores",
     "Footwear":             "shoe stores",
     "Sports Venues & Courts": "sports venues and courts",
+}
+
+# Third-party booking/listing platforms per category.
+# Each entry is (platform_name, domain) — used to search Google for a listing.
+CATEGORY_PLATFORMS = {
+    "Sports Venues & Courts": [
+        ("Playo",    "playo.co"),
+        ("District", "district.in"),
+        ("Huddle",   "huddlespaces.com"),
+        ("Playmore", "playmore.in"),
+    ],
+    "Restaurant / Cafe": [
+        ("Zomato",   "zomato.com"),
+        ("Swiggy",   "swiggy.com"),
+        ("EazyDiner","eazydiner.com"),
+        ("Dineout",  "dineout.in"),
+    ],
+    "Salon / Beauty": [
+        ("Nykaa Salon", "nykaasalon.com"),
+        ("BookMyShow Beauty", "bookmyshow.com/beauty"),
+        ("Urban Company", "urbancompany.com"),
+    ],
+    "Grocery / Supermarket": [
+        ("BigBasket", "bigbasket.com"),
+        ("Blinkit",   "blinkit.com"),
+        ("JioMart",   "jiomart.com"),
+    ],
 }
 
 
@@ -156,7 +184,28 @@ def get_place_details(driver, url):
     return website, full_address, review_count
 
 
-def scrape(city, category_query, max_scrolls, fetch_details, status_placeholder):
+def find_platform_links(driver, shop_name, city_name, platforms):
+    """Search Google for a shop's listing on each platform; return found URLs as a list."""
+    found = []
+    for platform_name, domain in platforms:
+        query = urllib.parse.quote(f"{shop_name} {city_name} site:{domain}")
+        search_url = f"https://www.google.com/search?q={query}&hl=en"
+        try:
+            driver.get(search_url)
+            time.sleep(1.5)
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            # First organic result link that actually belongs to the domain
+            for a in soup.select("a[href]"):
+                href = a.get("href", "")
+                if domain in href and href.startswith("http"):
+                    found.append(href.split("&")[0])  # strip Google tracking params
+                    break
+        except Exception:
+            pass
+    return found
+
+
+def scrape(city, category_query, max_scrolls, fetch_details, status_placeholder, platforms=None):
     query = urllib.parse.quote(f"{category_query} in {city}")
     url = f"https://www.google.com/maps/search/{query}?hl=en"
     results_url = url
@@ -226,6 +275,15 @@ def scrape(city, category_query, max_scrolls, fetch_details, status_placeholder)
                     shops[i]["Full Address"] = full_address
                     shops[i]["Review Count"] = review_count
 
+        # Optionally search for third-party platform links
+        if platforms:
+            for i, shop in enumerate(shops):
+                status_placeholder.info(
+                    f"🔗 Searching platform links for **{shop['Name']}** ({i+1}/{len(shops)})..."
+                )
+                links = find_platform_links(driver, shop["Name"], city, platforms)
+                shops[i]["Platform Links"] = json.dumps(links)
+
         return shops, None
 
     except Exception as e:
@@ -258,6 +316,17 @@ with col5:
         help="Adds a direct Google Maps URL column to results and CSV"
     )
 
+# Platform links option — only shown when the selected category has known platforms
+available_platforms = CATEGORY_PLATFORMS.get(category, [])
+fetch_platform_links = False
+if available_platforms:
+    platform_names = ", ".join(p[0] for p in available_platforms)
+    fetch_platform_links = st.checkbox(
+        f"Search platform listings ({platform_names})",
+        value=False,
+        help=f"Searches for each venue on {platform_names} and stores found URLs in a 'Platform Links' column (JSON array). Slower — one extra Google search per shop per platform."
+    )
+
 st.info(
     "ℹ️ **Note on Owner Name:** Google Maps does not expose owner names publicly. "
     "Fields available: Name, Category, Description, Address, Rating, Phone, Hours, Website, Review Count.",
@@ -271,9 +340,10 @@ if st.button("🔍 Scrape Google Maps", type="primary", use_container_width=True
         st.stop()
 
     category_query = CATEGORIES[category]
+    platforms_to_search = available_platforms if fetch_platform_links else None
     status = st.empty()
 
-    shops, error = scrape(city.strip(), category_query, max_scrolls, fetch_details, status)
+    shops, error = scrape(city.strip(), category_query, max_scrolls, fetch_details, status, platforms_to_search)
     status.empty()
 
     if error:
@@ -282,9 +352,11 @@ if st.button("🔍 Scrape Google Maps", type="primary", use_container_width=True
 
     all_df = pd.DataFrame(shops)
     all_df = all_df.rename(columns={"_url": "Google Maps Link"})
-    display_cols = [k for k in all_df.columns if k != "Google Maps Link"]
+    display_cols = [k for k in all_df.columns if k not in ("Google Maps Link", "Platform Links")]
     if show_map_link:
         display_cols.append("Google Maps Link")
+    if fetch_platform_links and "Platform Links" in all_df.columns:
+        display_cols.append("Platform Links")
     df = all_df[display_cols]
 
     st.success(f"✅ Found **{len(df)}** shopkeepers in **{city}** — {category}")
