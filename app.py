@@ -193,12 +193,18 @@ def find_platform_links(driver, shop_name, city_name, platforms):
         try:
             driver.get(search_url)
             time.sleep(1.5)
+            # Google redirected to login — blocked, skip this platform
+            if "accounts.google.com" in driver.current_url:
+                continue
             soup = BeautifulSoup(driver.page_source, "html.parser")
-            # First organic result link that actually belongs to the domain
             for a in soup.select("a[href]"):
                 href = a.get("href", "")
-                if domain in href and href.startswith("http"):
-                    found.append(href.split("&")[0])  # strip Google tracking params
+                parsed = urllib.parse.urlparse(href)
+                # Match only if the actual hostname belongs to the platform domain
+                if parsed.scheme in ("http", "https") and (
+                    parsed.netloc == domain or parsed.netloc.endswith(f".{domain}")
+                ):
+                    found.append(href)
                     break
         except Exception:
             pass
